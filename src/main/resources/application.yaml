@@ -2,6 +2,10 @@ file-scanner:
   root-path: ./test-data
   include-extensions: [".txt", ".pdf", ".md"]
 
+vectorstore:
+  base-url: http://localhost:8080
+  api-key: secret
+
 ollama:
   base-url: http://localhost:11434
 
