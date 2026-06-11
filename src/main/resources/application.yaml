@@ -1,3 +1,7 @@
+file-scanner:
+  root-path: ./test-data
+  include-extensions: [".txt", ".pdf", ".md"]
+
 ollama:
   base-url: http://localhost:11434
 
