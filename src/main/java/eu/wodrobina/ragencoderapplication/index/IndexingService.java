@@ -1,7 +1,7 @@
 package eu.wodrobina.ragencoderapplication.index;
 
 import eu.wodrobina.ragencoderapplication.chunking.Chunk;
-import eu.wodrobina.ragencoderapplication.chunking.TextChunker;
+import eu.wodrobina.ragencoderapplication.chunking.Chunker;
 import eu.wodrobina.ragencoderapplication.encoder.EmbeddingProvider;
 import org.springframework.stereotype.Service;
 
@@ -12,12 +12,12 @@ import java.util.Map;
 @Service
 public class IndexingService {
 
-    private final TextChunker chunker;
+    private final Chunker chunker;
     private final EmbeddingProvider embeddingProvider;
     private final VectorStore vectorStore;
 
     public IndexingService(
-            TextChunker chunker,
+            Chunker chunker,
             EmbeddingProvider embeddingProvider,
             VectorStore vectorStore
     ) {

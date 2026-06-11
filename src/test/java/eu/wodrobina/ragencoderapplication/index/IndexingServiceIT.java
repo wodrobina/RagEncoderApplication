@@ -23,13 +23,13 @@ class IndexingServiceIT {
     private IndexingService indexingService;
 
     @Autowired
-    private VectorStore vectorStore;
+        private VectorStore vectorStore;
 
     @Autowired
     private EmbeddingProvider embeddingProvider;
 
     @Test
-    void testIndexTextFlow() {
+    void shouldSuccessfullyIndexTextAndMakeItSearchable() {
         String sourceId = "test-doc";
         String text = "This is a test sentence for integration testing.";
         Map<String, Object> metadata = Map.of("author", "claude");

@@ -14,10 +14,10 @@ import org.mockito.Mockito;
 import java.util.List;
 import java.util.Map;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = "spring.main.allow-bean-definition-overriding=true")
 class RagControllerTest {
@@ -42,7 +42,7 @@ class RagControllerTest {
     }
 
     @Test
-    void testEmbed() throws Exception {
+    void shouldReturnEmbeddingWhenTextIsProvided() throws Exception {
         when(embeddingProvider.modelName()).thenReturn("test-model");
         when(embeddingProvider.embedQuery(anyString())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
 
@@ -55,7 +55,7 @@ class RagControllerTest {
     }
 
     @Test
-    void testIndexText() throws Exception {
+    void shouldIndexTextAndReturnChunkCount() throws Exception {
         when(indexingService.indexText(anyString(), anyString(), anyMap())).thenReturn(5);
 
         mockMvc.perform(post("/rag/index-text")
@@ -66,7 +66,7 @@ class RagControllerTest {
     }
 
     @Test
-    void testSearch() throws Exception {
+    void shouldReturnSearchResultsWhenQueryIsSent() throws Exception {
         when(embeddingProvider.embedQuery(anyString())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
         when(vectorStore.search(anyList(), anyInt(), anyMap())).thenReturn(List.of(new SearchResult("id", "content", 1.0, Map.of())));
 
