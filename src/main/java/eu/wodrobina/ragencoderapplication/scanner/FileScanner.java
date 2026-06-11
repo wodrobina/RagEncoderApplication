@@ -31,9 +31,18 @@ public class FileScanner {
 
         try (Stream<Path> paths = Files.walk(Paths.get(properties.getRootPath()))) {
             return paths.filter(Files::isRegularFile)
-                    .filter(path -> isIncluded(path))
+                    .filter(this::isIncluded)
                     .collect(Collectors.toList());
         }
+    }
+
+    /**
+     * Reads the content of a file.
+     * @param path The path to the file.
+     * @return The content as a String.
+     */
+    public String readContent(Path path) throws IOException {
+        return Files.readString(path);
     }
 
     private boolean isIncluded(Path path) {
