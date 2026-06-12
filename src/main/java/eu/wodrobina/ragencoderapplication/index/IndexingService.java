@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.time.Instant;
+import java.nio.file.Path;
+import java.util.HashMap;
 
 @Service
 public class IndexingService {
@@ -44,6 +46,15 @@ public class IndexingService {
 
         for (int i = 0; i < chunks.size(); i++) {
             Chunk chunk = chunks.get(i);
+            String fileName = resolveFileName(chunk.fileName(), chunk.sourceId());
+            String fileType = resolveFileType(chunk.fileType(), fileName);
+            Map<String, Object> documentMetadata = enrichedDocumentMetadata(
+                    chunk.metadata(),
+                    chunk.sourceId(),
+                    chunk.chunkIndex(),
+                    fileName,
+                    fileType
+            );
 
             documents.add(new VectorDocument(
                     chunk.id(),
@@ -53,10 +64,10 @@ public class IndexingService {
                     chunk.chunkIndex(),
                     chunk.contentHash(),
                     chunk.documentHash(),
-                    chunk.fileName(),
-                    chunk.fileType(),
+                    fileName,
+                    fileType,
                     Instant.now(),
-                    chunk.metadata()
+                    documentMetadata
             ));
         }
 
@@ -65,9 +76,60 @@ public class IndexingService {
     }
 
     private Map<String, Object> enrichedMetadata(Map<String, Object> metadata) {
-        var copy = new java.util.HashMap<>(metadata);
+        var copy = metadata == null ? new HashMap<String, Object>() : new HashMap<>(metadata);
         copy.put("embedding_model", embeddingProvider.modelName());
         copy.put("embedding_dimension", embeddingProvider.dimension());
         return Map.copyOf(copy);
+    }
+
+
+    private Map<String, Object> enrichedDocumentMetadata(
+            Map<String, Object> metadata,
+            String sourceId,
+            int chunkIndex,
+            String fileName,
+            String fileType
+    ) {
+        var copy = metadata == null ? new HashMap<String, Object>() : new HashMap<>(metadata);
+        copy.put("sourceId", sourceId);
+        copy.put("chunkIndex", chunkIndex);
+        copy.put("fileName", fileName);
+        copy.put("fileType", fileType);
+        return Map.copyOf(copy);
+    }
+
+    private String resolveFileName(String fileName, String sourceId) {
+        if (fileName != null && !fileName.isBlank() && !"unknown".equalsIgnoreCase(fileName)) {
+            return fileName;
+        }
+
+        if (sourceId == null || sourceId.isBlank()) {
+            return "unknown";
+        }
+
+        try {
+            Path path = Path.of(sourceId);
+            Path resolvedFileName = path.getFileName();
+            return resolvedFileName == null ? "unknown" : resolvedFileName.toString();
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
+    private String resolveFileType(String fileType, String fileName) {
+        if (fileType != null && !fileType.isBlank() && !"unknown".equalsIgnoreCase(fileType)) {
+            return fileType;
+        }
+
+        if (fileName == null || fileName.isBlank() || "unknown".equalsIgnoreCase(fileName)) {
+            return "unknown";
+        }
+
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
+            return "unknown";
+        }
+
+        return fileName.substring(dotIndex + 1).toLowerCase();
     }
 }

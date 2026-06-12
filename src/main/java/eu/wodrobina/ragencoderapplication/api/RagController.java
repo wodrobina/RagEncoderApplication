@@ -8,6 +8,8 @@ import eu.wodrobina.ragencoderapplication.index.VectorStore;
 import eu.wodrobina.ragencoderapplication.scanner.FileScanner;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
@@ -22,6 +24,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/rag")
 public class RagController {
+
+    private static final Logger log = LoggerFactory.getLogger(RagController.class);
 
     private final EmbeddingProvider embeddingProvider;
     private final IndexingService indexingService;
@@ -75,18 +79,35 @@ public class RagController {
 
     @PostMapping("/index-directory")
     public IndexResponse indexDirectory(@Valid @RequestBody IndexDirectoryRequest request) throws Exception {
-        List<Path> files = fileScanner.scan();
+        List<Path> files = fileScanner.scan(Path.of(request.path()));
         int totalChunks = 0;
 
-        for (Path path : files) {
-            String content = fileScanner.readContent(path);
-            totalChunks += indexingService.indexText(
-                    path.toString(),
-                    content,
-                    Map.of("file_path", path.toString()),
-                    "documents"
-            );
+        log.info("Found {} files to index in directory: {}", files.size(), request.path());
+
+        for (int i = 0; i < files.size(); i++) {
+            Path path = files.get(i);
+
+            try {
+                log.info("Indexing file {}/{}: {}", i + 1, files.size(), path);
+
+                String content = fileScanner.readContent(path);
+
+                int chunks = indexingService.indexText(
+                        path.toString(),
+                        content,
+                        Map.of("file_path", path.toString()),
+                        "ng-tax"
+                );
+
+                totalChunks += chunks;
+
+                log.info("Indexed file {}/{}: {} -> {} chunks", i + 1, files.size(), path, chunks);
+            } catch (Exception e) {
+                log.warn("Skipping file {}/{}: {} because: {}", i + 1, files.size(), path, e.getMessage());
+            }
         }
+
+        log.info("Finished indexing directory: {}. Total chunks: {}", request.path(), totalChunks);
 
         return new IndexResponse(totalChunks);
     }

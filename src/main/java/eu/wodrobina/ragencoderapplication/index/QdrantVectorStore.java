@@ -73,7 +73,7 @@ public class QdrantVectorStore implements VectorStore {
             searchRequest.put("with_payload", true);
 
             if (filter != null && !filter.isEmpty()) {
-                searchRequest.put("filter", filter);
+                searchRequest.put("filter", toQdrantFilter(filter));
             }
 
             QdrantSearchResponse response = restClient.post()
@@ -96,6 +96,26 @@ public class QdrantVectorStore implements VectorStore {
             log.error("Error searching Qdrant in collection {}: {}", collection, e.getMessage(), e);
             return List.of();
         }
+    }
+
+    private Map<String, Object> toQdrantFilter(Map<String, Object> filter) {
+        if (filter.containsKey("must")
+                || filter.containsKey("should")
+                || filter.containsKey("must_not")
+                || filter.containsKey("min_should")) {
+            return filter;
+        }
+
+        List<Map<String, Object>> must = filter.entrySet()
+                .stream()
+                .filter(entry -> entry.getValue() != null)
+                .map(entry -> Map.of(
+                        "key", entry.getKey(),
+                        "match", Map.of("value", entry.getValue())
+                ))
+                .toList();
+
+        return Map.of("must", must);
     }
 
     private void ensureCollectionExists(String collectionName) {
