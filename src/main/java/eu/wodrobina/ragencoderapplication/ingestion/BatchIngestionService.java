@@ -37,7 +37,7 @@ public class BatchIngestionService {
             metadata.put("file", path.toString());
             metadata.put("type", "document");
 
-            indexingService.indexText(path.toString(), content, metadata);
+            indexingService.indexText(path.toString(), content, metadata, "documents");
         }
     }
 }

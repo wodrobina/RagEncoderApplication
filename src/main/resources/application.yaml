@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8085
 
 ollama:
   base-url: http://localhost:11434

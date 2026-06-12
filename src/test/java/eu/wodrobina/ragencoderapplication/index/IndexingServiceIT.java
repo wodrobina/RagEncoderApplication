@@ -1,6 +1,5 @@
 package eu.wodrobina.ragencoderapplication.index;
 
-import eu.wodrobina.ragencoderapplication.chunking.Chunk;
 import eu.wodrobina.ragencoderapplication.encoder.EmbeddingProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +22,7 @@ class IndexingServiceIT {
     private IndexingService indexingService;
 
     @Autowired
-        private VectorStore vectorStore;
+    private VectorStore vectorStore;
 
     @Autowired
     private EmbeddingProvider embeddingProvider;
@@ -40,12 +39,12 @@ class IndexingServiceIT {
         when(embeddingProvider.modelName()).thenReturn("test-model");
         when(embeddingProvider.dimension()).thenReturn(3);
 
-        int chunksCount = indexingService.indexText(sourceId, text, metadata);
+        int chunksCount = indexingService.indexText(sourceId, text, metadata, "documents");
 
         assertEquals(1, chunksCount, "Should have created 1 chunk");
 
         // Verify it's in the vector store
-        List<SearchResult> results = vectorStore.search(dummyVector, 5, Map.of());
+        List<SearchResult> results = vectorStore.search(dummyVector, 5, Map.of(), "documents");
         assertFalse(results.isEmpty(), "Search should return results");
         assertEquals(text, results.get(0).content());
     }

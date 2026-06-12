@@ -56,7 +56,7 @@ class RagControllerTest {
 
     @Test
     void shouldIndexTextAndReturnChunkCount() throws Exception {
-        when(indexingService.indexText(anyString(), anyString(), anyMap())).thenReturn(5);
+        when(indexingService.indexText(anyString(), anyString(), anyMap(), anyString())).thenReturn(5);
 
         mockMvc.perform(post("/rag/index-text")
                         .contentType("application/json")
@@ -68,14 +68,14 @@ class RagControllerTest {
     @Test
     void shouldReturnSearchResultsWhenQueryIsSent() throws Exception {
         when(embeddingProvider.embedQuery(anyString())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
-        when(vectorStore.search(anyList(), anyInt(), anyMap())).thenReturn(List.of(new SearchResult("id", "content", 1.0, Map.of())));
+        when(vectorStore.search(anyList(), anyInt(), anyMap(), anyString())).thenReturn(List.of(new SearchResult("id", "content", 1.0, Map.of())));
 
         mockMvc.perform(post("/rag/search")
                         .contentType("application/json")
                         .content("{\"query\": \"test\", \"limit\": 10}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].content").value("content"));
+                .andExpect(jsonPath("0.content").value("content"));
     }
 
     @TestConfiguration

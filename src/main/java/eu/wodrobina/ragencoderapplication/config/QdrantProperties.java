@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @Configuration
 @ConfigurationProperties(prefix = "qdrant")
 public class QdrantProperties {
-    private String host = "192.168.87.80";
+    private String host = "localhost";
     private Integer grpcPort = 6334;
     private Integer restPort = 6333;
     private String apiKey;

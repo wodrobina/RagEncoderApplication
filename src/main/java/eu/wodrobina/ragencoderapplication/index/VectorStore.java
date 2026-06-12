@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface VectorStore {
-    void upsert(List<VectorDocument> documents);
+    void upsert(List<VectorDocument> documents, String collection);
 
-    List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter);
+    List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter, String collection);
 }

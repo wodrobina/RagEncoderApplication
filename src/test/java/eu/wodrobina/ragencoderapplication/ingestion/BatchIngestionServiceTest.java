@@ -49,8 +49,8 @@ class BatchIngestionServiceTest {
         batchIngestionService.runIngestion();
 
         // Assert
-        verify(indexingService, times(2)).indexText(anyString(), anyString(), anyMap());
-        verify(indexingService).indexText(eq(file1.toString()), eq("Content of test 1"), anyMap());
-        verify(indexingService).indexText(eq(file2.toString()), eq("Content of test 2"), anyMap());
+        verify(indexingService, times(2)).indexText(anyString(), anyString(), anyMap(), anyString());
+        verify(indexingService).indexText(eq(file1.toString()), eq("Content of test 1"), anyMap(), eq("documents"));
+        verify(indexingService).indexText(eq(file2.toString()), eq("Content of test 2"), anyMap(), eq("documents"));
     }
 }

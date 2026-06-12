@@ -1,14 +1,24 @@
 package eu.wodrobina.ragencoderapplication.index;
 
 import eu.wodrobina.ragencoderapplication.config.QdrantProperties;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
-import java.util.*;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClient;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class QdrantVectorStore implements VectorStore {
+
+    private static final Logger log = LoggerFactory.getLogger(QdrantVectorStore.class);
 
     private final RestClient restClient;
     private final QdrantProperties properties;
@@ -21,69 +31,190 @@ public class QdrantVectorStore implements VectorStore {
     }
 
     @Override
-    public void upsert(List<VectorDocument> documents) {
-        if (documents.isEmpty()) return;
+    public void upsert(List<VectorDocument> documents, String collection) {
+        if (documents == null || documents.isEmpty()) {
+            return;
+        }
+
+        ensureCollectionExists(collection);
 
         try {
-            String endpoint = "/collections/" + properties.getCollection() + "/points?params=wait=1000";
-            restClient.post()
-                    .uri(endpoint)
+            restClient.put()
+                    .uri("/collections/{collection}/points?wait=true", collection)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(generatePointsPayload(documents))
-                    .retrieve();
-            System.out.println("Successfully upserted " + documents.size() + " points to Qdrant.");
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Successfully upserted {} points to collection: {}", documents.size(), collection);
         } catch (Exception e) {
-            System.err.println("Error uploading to Qdrant: " + e.getMessage());
+            log.error("Error uploading to Qdrant for collection {}: {}", collection, e.getMessage(), e);
+            throw new RuntimeException("Failed to upload data to Qdrant", e);
         }
     }
 
     @Override
-    public List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter) {
+    public List<SearchResult> search(
+            List<Float> queryVector,
+            int limit,
+            Map<String, Object> filter,
+            String collection
+    ) {
+        if (queryVector == null || queryVector.isEmpty()) {
+            return List.of();
+        }
+
+        ensureCollectionExists(collection);
+
         try {
-            String endpoint = "/collections/" + properties.getCollection() + "/points/search";
+            Map<String, Object> searchRequest = new HashMap<>();
+            searchRequest.put("vector", queryVector);
+            searchRequest.put("limit", limit);
+            searchRequest.put("with_payload", true);
 
-            Map<String, Object> searchRequest = Map.of(
-                    "vector", queryVector,
-                    "filter", filter != null ? filter : Map.of(),
-                    "limit", limit
-            );
+            if (filter != null && !filter.isEmpty()) {
+                searchRequest.put("filter", filter);
+            }
 
-            SearchResultResponse response = restClient.post()
-                    .uri(endpoint)
+            QdrantSearchResponse response = restClient.post()
+                    .uri("/collections/{collection}/points/search", collection)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(searchRequest)
                     .retrieve()
-                    .body(SearchResultResponse.class);
+                    .body(QdrantSearchResponse.class);
 
-            return response.getPoints();
+            if (response == null || response.getResult() == null) {
+                return List.of();
+            }
+
+            return response.getResult()
+                    .stream()
+                    .map(QdrantPointResult::toSearchResult)
+                    .toList();
+
         } catch (Exception e) {
-            System.err.println("Error searching Qdrant: " + e.getMessage());
+            log.error("Error searching Qdrant in collection {}: {}", collection, e.getMessage(), e);
             return List.of();
         }
     }
 
+    private void ensureCollectionExists(String collectionName) {
+        try {
+            Map<String, Object> payload = Map.of(
+                    "vectors", Map.of(
+                            "size", properties.getVectorSize(),
+                            "distance", properties.getDistance()
+                    )
+            );
+
+            restClient.put()
+                    .uri("/collections/{collection}", collectionName)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info(
+                    "Created Qdrant collection: {}, vectorSize={}, distance={}",
+                    collectionName,
+                    properties.getVectorSize(),
+                    properties.getDistance()
+            );
+
+        } catch (HttpClientErrorException.Conflict e) {
+            log.debug("Qdrant collection already exists: {}", collectionName);
+        } catch (Exception e) {
+            log.error("Error creating Qdrant collection {}: {}", collectionName, e.getMessage(), e);
+            throw new RuntimeException("Failed to create Qdrant collection: " + collectionName, e);
+        }
+    }
+
     private Map<String, Object> generatePointsPayload(List<VectorDocument> documents) {
-        List<Map<String, Object> > points = new ArrayList<>();
+        List<Map<String, Object>> points = new ArrayList<>();
+
         for (VectorDocument doc : documents) {
             Map<String, Object> point = new HashMap<>();
-            point.put("id", doc.id());
+
+            String qdrantId = UUID.nameUUIDFromBytes(
+                    doc.id().getBytes(StandardCharsets.UTF_8)
+            ).toString();
+
+            point.put("id", qdrantId);
             point.put("vector", doc.embedding());
 
             Map<String, Object> payload = new HashMap<>();
+            payload.put("originalId", doc.id());
             payload.put("content", doc.content());
             payload.put("sourceId", doc.sourceId());
             payload.put("chunkIndex", doc.chunkIndex());
             payload.put("fileName", doc.fileName());
             payload.put("fileType", doc.fileType());
-            payload.put("indexedAt", doc.indexedAt().toString());
+
+            if (doc.indexedAt() != null) {
+                payload.put("indexedAt", doc.indexedAt().toString());
+            }
 
             point.put("payload", payload);
             points.add(point);
         }
+
         return Map.of("points", points);
     }
 
-    private static class SearchResultResponse {
-        private List<SearchResult> points;
-        public List<SearchResult> getPoints() { return points; }
-        public void setPoints(List<SearchResult> points) { this.points = points; }
+    private static class QdrantSearchResponse {
+        private List<QdrantPointResult> result;
+
+        public List<QdrantPointResult> getResult() {
+            return result;
+        }
+
+        public void setResult(List<QdrantPointResult> result) {
+            this.result = result;
+        }
+    }
+
+    private static class QdrantPointResult {
+        private String id;
+        private Float score;
+        private Map<String, Object> payload;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public Float getScore() {
+            return score;
+        }
+
+        public void setScore(Float score) {
+            this.score = score;
+        }
+
+        public Map<String, Object> getPayload() {
+            return payload;
+        }
+
+        public void setPayload(Map<String, Object> payload) {
+            this.payload = payload;
+        }
+
+        public SearchResult toSearchResult() {
+            String content = null;
+
+            if (payload != null && payload.get("content") != null) {
+                content = payload.get("content").toString();
+            }
+
+            return new SearchResult(
+                    id,
+                    content,
+                    score,
+                    payload
+            );
+        }
     }
 }

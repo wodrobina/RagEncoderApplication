@@ -27,7 +27,7 @@ public class IndexingService {
         this.vectorStore = vectorStore;
     }
 
-    public int indexText(String sourceId, String text, Map<String, Object> metadata) {
+    public int indexText(String sourceId, String text, Map<String, Object> metadata, String collection) {
         List<Chunk> chunks = chunker.chunk(sourceId, text, enrichedMetadata(metadata));
 
         List<String> contents = chunks.stream()
@@ -60,7 +60,7 @@ public class IndexingService {
             ));
         }
 
-        vectorStore.upsert(documents);
+        vectorStore.upsert(documents, collection);
         return documents.size();
     }
 

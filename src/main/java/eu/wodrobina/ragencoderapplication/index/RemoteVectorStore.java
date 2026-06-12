@@ -14,21 +14,20 @@ public class RemoteVectorStore implements VectorStore {
     private final RestClient restClient;
 
     public RemoteVectorStore(VectorStoreProperties properties) {
-        this.restClient =RestClient.builder()
+        this.restClient = RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .build();
     }
 
     @Override
-    public void upsert(List<VectorDocument> documents) {
+    public void upsert(List<VectorDocument> documents, String collection) {
         // Implementation for posting to the remote vector store API
-        // This is a placeholder for now as we don't have an actual external service
         System.out.println("Upserting " + documents.size() + " documents to: " +
             "http://" + System.getenv("VECTOR_STORE_URL") + "/upsert");
     }
 
     @Override
-    public List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter) {
+    public List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter, String collection) {
         // Placeholder for search implementation
         return List.of();
     }

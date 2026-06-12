@@ -36,6 +36,6 @@ class RemoteVectorStoreTest {
     @Test
     void RemoteVectorStore_upsert_doesNotThrowException() {
         List<VectorDocument> docs = new ArrayList<>();
-        assertDoesNotThrow(() -> vectorStore.upsert(docs));
+        assertDoesNotThrow(() -> vectorStore.upsert(docs, "test-collection"));
     }
 }

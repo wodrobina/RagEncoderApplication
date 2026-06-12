@@ -53,7 +53,8 @@ public class RagController {
         int chunks = indexingService.indexText(
                 request.sourceId(),
                 request.text(),
-                request.metadata() == null ? Map.of() : request.metadata()
+                request.metadata() == null ? Map.of() : request.metadata(),
+                request.collection() == null ? "documents" : request.collection()
         );
 
         return new IndexResponse(chunks);
@@ -65,7 +66,8 @@ public class RagController {
         int chunks = indexingService.indexText(
                 request.sourceId(),
                 content,
-                Map.of("file_path", request.path())
+                Map.of("file_path", request.path()),
+                "documents"
         );
 
         return new IndexResponse(chunks);
@@ -81,7 +83,8 @@ public class RagController {
             totalChunks += indexingService.indexText(
                     path.toString(),
                     content,
-                    Map.of("file_path", path.toString())
+                    Map.of("file_path", path.toString()),
+                    "documents"
             );
         }
 
@@ -95,7 +98,8 @@ public class RagController {
         return vectorStore.search(
                 queryEmbedding,
                 request.limit() <= 0 ? 10 : request.limit(),
-                request.filter() == null ? Map.of() : request.filter()
+                request.filter() == null ? Map.of() : request.filter(),
+                request.collection() == null ? "documents" : request.collection()
         );
     }
 
@@ -136,7 +140,8 @@ public class RagController {
     public record IndexTextRequest(
             @NotBlank(message = "Source ID is required") String sourceId,
             @NotBlank(message = "Text is required") String text,
-            Map<String, Object> metadata
+            Map<String, Object> metadata,
+            String collection
     ) {}
 
     public record IndexResponse(int chunksIndexed) {}
@@ -144,7 +149,8 @@ public class RagController {
     public record SearchRequest(
             @NotBlank(message = "Query is required") String query,
             @Min(1) @Max(50) int limit,
-            Map<String, Object> filter
+            Map<String, Object> filter,
+            String collection
     ) {}
 
     public record IndexFileRequest(

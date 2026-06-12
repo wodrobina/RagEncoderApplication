@@ -4,16 +4,17 @@ import java.util.*;
 
 public class InMemoryVectorStore implements VectorStore {
 
-    private final List<VectorDocument> documents = new ArrayList<>();
+    private final Map<String, List<VectorDocument>> collections = new HashMap<>();
 
     @Override
-    public void upsert(List<VectorDocument> newDocuments) {
-        documents.addAll(newDocuments);
+    public void upsert(List<VectorDocument> documents, String collection) {
+        collections.computeIfAbsent(collection, k -> new ArrayList<>()).addAll(documents);
     }
 
     @Override
-    public List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter) {
-        return documents.stream()
+    public List<SearchResult> search(List<Float> queryVector, int limit, Map<String, Object> filter, String collection) {
+        List<VectorDocument> docs = collections.getOrDefault(collection, List.of());
+        return docs.stream()
                 .map(doc -> {
                     double score = cosineSimilarity(queryVector, doc.embedding());
                     return new SearchResult(doc.id(), doc.content(), score, doc.metadata());
