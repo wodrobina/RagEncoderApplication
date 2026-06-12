@@ -5,10 +5,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class TextChunker {
@@ -30,6 +27,10 @@ public class TextChunker {
 
     public List<Chunk> chunk(String sourceId, String text, Map<String, Object> metadata) {
         List<Chunk> chunks = new ArrayList<>();
+
+        if (text == null || text.isBlank()) {
+            return chunks;
+        }
 
         String normalized = normalize(text);
         int start = 0;
@@ -71,7 +72,7 @@ public class TextChunker {
             int startOffset,
             int endOffset
     ) {
-        var copy = new java.util.HashMap<>(metadata);
+        var copy = new HashMap<>(metadata);
         copy.put("chunk_index", chunkIndex);
         copy.put("start_offset", startOffset);
         copy.put("end_offset", endOffset);

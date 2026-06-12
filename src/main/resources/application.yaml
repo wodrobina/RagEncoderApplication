@@ -1,18 +1,36 @@
-file-scanner:
-  root-path: ./test-data
-  include-extensions: [".txt", ".pdf", ".md"]
-
-vectorstore:
-  base-url: http://localhost:8080
-  api-key: secret
+server:
+  port: 8080
 
 ollama:
   base-url: http://localhost:11434
+  connect-timeout: 5s
+  read-timeout: 60s
 
 embedding:
+  provider: ollama
   model: bge-m3
   dimension: 1024
 
-rag:
-  chunk-size: 1200
-  chunk-overlap: 200
+qdrant:
+  host: 192.168.87.80
+  grpc-port: 6334
+  rest-port: 6333
+  api-key: ${QDRANT_API_KEY:}
+  collection: documents
+  vector-size: 1024
+  distance: Cosine
+  use-tls: false
+
+chunking:
+  max-chars: 1200
+  overlap-chars: 200
+
+indexing:
+  batch-size: 64
+
+ingestion:
+  input-dir: ./test-data
+  allowed-extensions:
+    - .txt
+    - .md
+    - .pdf

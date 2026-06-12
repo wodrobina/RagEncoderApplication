@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 
 @Service
 public class IndexingService {
@@ -36,7 +37,7 @@ public class IndexingService {
         List<List<Float>> embeddings = embeddingProvider.embedDocuments(contents);
 
         if (embeddings.size() != chunks.size()) {
-            throw new IllegalStateException("Embedding count does not match chunk count");
+            throw new IllegalStateException("Embedding count does not match chunk count: expected " + chunks.size() + ", got " + embeddings.size());
         }
 
         List<VectorDocument> documents = new ArrayList<>();
@@ -48,6 +49,13 @@ public class IndexingService {
                     chunk.id(),
                     chunk.content(),
                     embeddings.get(i),
+                    chunk.sourceId(),
+                    chunk.chunkIndex(),
+                    chunk.contentHash(),
+                    chunk.documentHash(),
+                    chunk.fileName(),
+                    chunk.fileType(),
+                    Instant.now(),
                     chunk.metadata()
             ));
         }
