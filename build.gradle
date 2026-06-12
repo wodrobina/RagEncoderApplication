@@ -23,7 +23,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
     // PDF processing
-    implementation 'org.apache.pdfbox:pdfbox:3.0.1'
+    implementation 'org.apache.pdfbox:pdfbox:2.0.31'
 
     // Qdrant
     implementation 'io.qdrant:client:1.14.0'

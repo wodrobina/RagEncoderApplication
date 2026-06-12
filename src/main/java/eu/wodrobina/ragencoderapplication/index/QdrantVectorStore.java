@@ -17,7 +17,6 @@ public class QdrantVectorStore implements VectorStore {
         this.properties = properties;
         this.restClient = builder
                 .baseUrl("http://" + properties.getHost() + ":" + properties.getRestPort())
-                .defaultContentType(MediaType.APPLICATION_JSON)
                 .build();
     }
 
@@ -54,7 +53,7 @@ public class QdrantVectorStore implements VectorStore {
                     .retrieve()
                     .body(SearchResultResponse.class);
 
-            return response.points();
+            return response.getPoints();
         } catch (Exception e) {
             System.err.println("Error searching Qdrant: " + e.getMessage());
             return List.of();
@@ -62,7 +61,7 @@ public class QdrantVectorStore implements VectorStore {
     }
 
     private Map<String, Object> generatePointsPayload(List<VectorDocument> documents) {
-        List<Map<String, Object>> points = new ArrayList<>();
+        List<Map<String, Object> > points = new ArrayList<>();
         for (VectorDocument doc : documents) {
             Map<String, Object> point = new HashMap<>();
             point.put("id", doc.id());

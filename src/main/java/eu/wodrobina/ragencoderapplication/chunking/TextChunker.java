@@ -44,7 +44,13 @@ public class TextChunker {
                 chunks.add(new Chunk(
                         stableId(sourceId, index, content),
                         content,
-                        withChunkMetadata(metadata, index, start, end)
+                        withChunkMetadata(metadata, index, start, end),
+                        sourceId,
+                        index,
+                        generateHash(content),
+                        generateHash(content),
+                        "unknown",
+                        "unknown"
                 ));
             }
 
@@ -92,6 +98,16 @@ public class TextChunker {
             return HexFormat.of().formatHex(digest.digest());
         } catch (Exception e) {
             throw new IllegalStateException("Could not generate chunk id", e);
+        }
+    }
+
+    private static String generateHash(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            return "";
         }
     }
 }

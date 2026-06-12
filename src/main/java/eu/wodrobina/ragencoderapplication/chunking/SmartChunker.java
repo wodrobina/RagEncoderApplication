@@ -7,6 +7,9 @@ import org.springframework.context.annotation.Primary;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 
 @Component
 @Primary
@@ -53,7 +56,13 @@ public class SmartChunker extends AbstractChunker {
                     chunks.add(new Chunk(
                             stableId(sourceId, chunkCount++, subContent),
                             subContent,
-                            withChunkMetadata(metadata, chunkCount - 1, currentStartOffset, currentEndOffset)
+                            withChunkMetadata(metadata, chunkCount - 1, currentStartOffset, currentEndOffset),
+                            sourceId,
+                            chunkCount - 1,
+                            generateHash(subContent),
+                            generateHash(subContent),
+                            "unknown",
+                            "unknown"
                     ));
 
                     startChar = endChar;
@@ -68,7 +77,7 @@ public class SmartChunker extends AbstractChunker {
             int currentSize = 0;
 
             for (int i = currentLineIdx; i < lines.length; i++) {
-                int lineLen = lines[i].length() + 1; // plus newline
+                int lineLen = lines[i].length() + 1;
                 if (currentSize + lineLen > chunkSize && i > currentLineIdx) {
                     break;
                 }
@@ -91,7 +100,13 @@ public class SmartChunker extends AbstractChunker {
             chunks.add(new Chunk(
                     stableId(sourceId, chunkCount++, content),
                     content,
-                    withChunkMetadata(metadata, chunkCount - 1, startOffset, endOffset)
+                    withChunkMetadata(metadata, chunkCount - 1, startOffset, endOffset),
+                    sourceId,
+                    chunkCount - 1,
+                    generateHash(content),
+                    generateHash(content),
+                    "unknown",
+                    "unknown"
             ));
 
             // Determine next starting index (overlap)
@@ -125,5 +140,15 @@ public class SmartChunker extends AbstractChunker {
             offset += lines[i].length() + 1;
         }
         return offset;
+    }
+
+    private static String generateHash(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            return "";
+        }
     }
 }
