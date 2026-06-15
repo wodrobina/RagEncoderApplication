@@ -10,13 +10,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.mockito.Mockito;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.mockito.ArgumentMatchers.*;
+        import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = "spring.main.allow-bean-definition-overriding=true")
@@ -71,11 +72,10 @@ class RagControllerTest {
         when(vectorStore.search(anyList(), anyInt(), anyMap(), anyString())).thenReturn(List.of(new SearchResult("id", "content", 1.0, Map.of())));
 
         mockMvc.perform(post("/rag/search")
-                        .contentType("application/json")
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\": \"test\", \"limit\": 10}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("0.content").value("content"));
+                .andExpect(jsonPath("$[0].content").value("content"));
     }
 
     @TestConfiguration

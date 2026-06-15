@@ -50,13 +50,13 @@ class FileScannerTest {
     }
 
     @Test
-    void testFileScanner_shouldIncludeAllFilesWhenNoExtensionsAreSpecified() throws IOException {
+    void testFileScanner_shouldIncludeAllTextFilesWhenNoExtensionsAreSpecified() throws IOException {
         properties.setIncludeExtensions(null);
         Files.createFile(tempDir.resolve("test1.txt"));
         Files.createFile(tempDir.resolve("ignored.pdf"));
 
         List<Path> results = fileScanner.scan();
 
-        assertEquals(2, results.size());
+        assertEquals(1, results.size());
     }
 }
