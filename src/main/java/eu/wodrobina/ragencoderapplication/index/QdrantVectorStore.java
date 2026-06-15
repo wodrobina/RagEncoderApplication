@@ -163,10 +163,17 @@ public class QdrantVectorStore implements VectorStore {
             point.put("vector", doc.embedding());
 
             Map<String, Object> payload = new HashMap<>();
+
+            if (doc.metadata() != null) {
+                payload.putAll(doc.metadata());
+            }
+
             payload.put("originalId", doc.id());
             payload.put("content", doc.content());
             payload.put("sourceId", doc.sourceId());
             payload.put("chunkIndex", doc.chunkIndex());
+            payload.put("contentHash", doc.contentHash());
+            payload.put("documentHash", doc.documentHash());
             payload.put("fileName", doc.fileName());
             payload.put("fileType", doc.fileType());
 

@@ -101,16 +101,17 @@ public class IndexingService {
     public List<SearchResult> search(String query, int limit, Map<String, Object> filter, String collection) {
         List<Float> queryEmbedding = embeddingProvider.embedQuery(query);
 
-        int internalLimit = limit <= 0 ? 10 : limit;
+        int finalLimit = limit <= 0 ? 10 : limit;
+        int candidateLimit = Math.max(finalLimit * 5, 50);
 
         List<SearchResult> candidates = vectorStore.search(
                 queryEmbedding,
-                internalLimit,
+                candidateLimit,
                 filter == null ? Map.of() : filter,
                 collection == null ? "documents" : collection
         );
 
-        return reranker.rerank(query, candidates, internalLimit);
+        return reranker.rerank(query, candidates, finalLimit);
     }
 
     public List<SearchResult> rerankSearch(String query, List<SearchResult> candidates, int limit) {
