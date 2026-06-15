@@ -20,6 +20,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @RestController
 @RequestMapping("/rag")
@@ -80,36 +85,132 @@ public class RagController {
     @PostMapping("/index-directory")
     public IndexResponse indexDirectory(@Valid @RequestBody IndexDirectoryRequest request) throws Exception {
         List<Path> files = fileScanner.scan(Path.of(request.path()));
+        String collection = request.collection() == null || request.collection().isBlank()
+                ? "documents"
+                : request.collection();
+        int workers = resolveIndexingWorkers(request.parallelism(), files.size());
+
+        log.info(
+                "Found {} files to index in directory: {}. Collection: {}. Workers: {}",
+                files.size(),
+                request.path(),
+                collection,
+                workers
+        );
+
+        if (files.isEmpty()) {
+            return new IndexResponse(0);
+        }
+
         int totalChunks = 0;
+        int indexedFiles = 0;
+        int skippedFiles = 0;
 
-        log.info("Found {} files to index in directory: {}", files.size(), request.path());
+        try (ExecutorService executor = Executors.newFixedThreadPool(workers)) {
+            CompletionService<FileIndexResult> completionService = new ExecutorCompletionService<>(executor);
 
-        for (int i = 0; i < files.size(); i++) {
-            Path path = files.get(i);
+            for (int i = 0; i < files.size(); i++) {
+                Path path = files.get(i);
+                int fileNumber = i + 1;
+                int totalFiles = files.size();
 
-            try {
-                log.info("Indexing file {}/{}: {}", i + 1, files.size(), path);
+                completionService.submit(() -> indexSingleFile(path, fileNumber, totalFiles, collection));
+            }
 
-                String content = fileScanner.readContent(path);
+            for (int i = 0; i < files.size(); i++) {
+                Future<FileIndexResult> future = completionService.take();
+                FileIndexResult result = future.get();
 
-                int chunks = indexingService.indexText(
-                        path.toString(),
-                        content,
-                        Map.of("file_path", path.toString()),
-                        "ng-tax"
-                );
+                if (result.success()) {
+                    totalChunks += result.chunks();
+                    indexedFiles++;
 
-                totalChunks += chunks;
+                    log.info(
+                            "Indexed file {}/{}: {} -> {} chunks",
+                            result.fileNumber(),
+                            result.totalFiles(),
+                            result.path(),
+                            result.chunks()
+                    );
+                } else {
+                    skippedFiles++;
 
-                log.info("Indexed file {}/{}: {} -> {} chunks", i + 1, files.size(), path, chunks);
-            } catch (Exception e) {
-                log.warn("Skipping file {}/{}: {} because: {}", i + 1, files.size(), path, e.getMessage());
+                    log.warn(
+                            "Skipping file {}/{}: {} because: {}",
+                            result.fileNumber(),
+                            result.totalFiles(),
+                            result.path(),
+                            result.errorMessage()
+                    );
+                }
             }
         }
 
-        log.info("Finished indexing directory: {}. Total chunks: {}", request.path(), totalChunks);
+        log.info(
+                "Finished indexing directory: {}. Collection: {}. Indexed files: {}. Skipped files: {}. Total chunks: {}",
+                request.path(),
+                collection,
+                indexedFiles,
+                skippedFiles,
+                totalChunks
+        );
 
         return new IndexResponse(totalChunks);
+    }
+
+    private FileIndexResult indexSingleFile(Path path, int fileNumber, int totalFiles, String collection) {
+        try {
+            log.info("Indexing file {}/{}: {}", fileNumber, totalFiles, path);
+
+            String content = fileScanner.readContent(path);
+
+            int chunks = indexingService.indexText(
+                    path.toString(),
+                    content,
+                    Map.of(
+                            "file_path", path.toString(),
+                            "file_name", path.getFileName().toString()
+                    ),
+                    collection
+            );
+
+            return FileIndexResult.success(path, fileNumber, totalFiles, chunks);
+        } catch (Exception e) {
+            return FileIndexResult.failure(path, fileNumber, totalFiles, e.getMessage());
+        }
+    }
+
+    private int resolveIndexingWorkers(Integer requestedParallelism, int filesCount) {
+        if (filesCount <= 0) {
+            return 1;
+        }
+
+        int requestedWorkers = requestedParallelism == null || requestedParallelism <= 0
+                ? 4
+                : requestedParallelism;
+
+        return Math.max(1, Math.min(requestedWorkers, filesCount));
+    }
+
+    private record FileIndexResult(
+            Path path,
+            int fileNumber,
+            int totalFiles,
+            int chunks,
+            String errorMessage
+    ) {
+
+        static FileIndexResult success(Path path, int fileNumber, int totalFiles, int chunks) {
+            return new FileIndexResult(path, fileNumber, totalFiles, chunks, null);
+        }
+
+        static FileIndexResult failure(Path path, int fileNumber, int totalFiles, String errorMessage) {
+            return new FileIndexResult(path, fileNumber, totalFiles, 0, errorMessage);
+        }
+
+        boolean success() {
+            return errorMessage == null;
+        }
     }
 
     @PostMapping("/search")
@@ -180,7 +281,9 @@ public class RagController {
     ) {}
 
     public record IndexDirectoryRequest(
-            @NotBlank(message = "Path is required") String path
+            @NotBlank(message = "Path is required") String path,
+            String collection,
+            @Min(1) @Max(32) Integer parallelism
     ) {}
 
     public record HealthResponse(
