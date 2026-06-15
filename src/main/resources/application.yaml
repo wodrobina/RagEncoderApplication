@@ -6,6 +6,14 @@ ollama:
   connect-timeout: 5s
   read-timeout: 60s
 
+rag:
+  reranking:
+    enabled: true
+    strategy: lexical-overlap
+    candidate-limit: 20
+    vector-weight: 0.7
+    lexical-weight: 0.3
+
 embedding:
   provider: ollama
   model: bge-m3

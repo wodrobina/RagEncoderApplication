@@ -3,6 +3,7 @@ package eu.wodrobina.ragencoderapplication.index;
 import eu.wodrobina.ragencoderapplication.chunking.Chunk;
 import eu.wodrobina.ragencoderapplication.chunking.Chunker;
 import eu.wodrobina.ragencoderapplication.encoder.EmbeddingProvider;
+import eu.wodrobina.ragencoderapplication.reranking.Reranker;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -18,15 +19,18 @@ public class IndexingService {
     private final Chunker chunker;
     private final EmbeddingProvider embeddingProvider;
     private final VectorStore vectorStore;
+    private final Reranker reranker;
 
     public IndexingService(
             Chunker chunker,
             EmbeddingProvider embeddingProvider,
-            VectorStore vectorStore
+            VectorStore vectorStore,
+            Reranker reranker
     ) {
         this.chunker = chunker;
         this.embeddingProvider = embeddingProvider;
         this.vectorStore = vectorStore;
+        this.reranker = reranker;
     }
 
     public int indexText(String sourceId, String text, Map<String, Object> metadata, String collection) {
@@ -73,6 +77,27 @@ public class IndexingService {
 
         vectorStore.upsert(documents, collection);
         return documents.size();
+    }
+
+    public List<SearchResult> search(String query, int limit, Map<String, Object> filter, String collection) {
+        List<Float> queryEmbedding = embeddingProvider.embedQuery(query);
+
+        // Default limits if not provided
+        int internalLimit = (limit <= 0) ? 10 : limit;
+        
+        // The actual search returns results from the vector store
+        List<SearchResult> candidates = vectorStore.search(
+                queryEmbedding,
+                internalLimit,
+                filter == null ? Map.of() : filter,
+                collection == null ? "documents" : collection
+        );
+
+        return reranker.rerank(query, candidates, internalLimit);
+    }
+
+    public List<SearchResult> rerankSearch(String query, List<SearchResult> candidates, int limit) {
+        return reranker.rerank(query, candidates, limit);
     }
 
     private Map<String, Object> enrichedMetadata(Map<String, Object> metadata) {
