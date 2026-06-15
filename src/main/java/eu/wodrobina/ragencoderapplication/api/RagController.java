@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 @RestController
@@ -44,7 +43,9 @@ public class RagController {
 
     private static final String DEFAULT_COLLECTION = "documents";
     private static final int DEFAULT_SEARCH_LIMIT = 10;
-    private static final int DEFAULT_INDEXING_WORKERS = 4;
+    private static final int DEFAULT_INDEXING_EXECUTOR_THREADS = 4;
+    private static final int MIN_INDEXING_EXECUTOR_THREADS = 2;
+    private static final int MAX_INDEXING_EXECUTOR_THREADS = 32;
 
     private final EmbeddingProvider embeddingProvider;
     private final IndexingService indexingService;
@@ -52,6 +53,7 @@ public class RagController {
     private final FileScanner fileScanner;
     private final RerankingProperties rerankingProperties;
     private final Reranker reranker;
+    private final ExecutorService indexingExecutor;
     private final HttpClient httpClient;
 
     public RagController(
@@ -60,7 +62,8 @@ public class RagController {
             VectorStore vectorStore,
             FileScanner fileScanner,
             RerankingProperties rerankingProperties,
-            Reranker reranker
+            Reranker reranker,
+            ExecutorService indexingExecutor
     ) {
         this.embeddingProvider = embeddingProvider;
         this.indexingService = indexingService;
@@ -68,9 +71,24 @@ public class RagController {
         this.fileScanner = fileScanner;
         this.rerankingProperties = rerankingProperties;
         this.reranker = reranker;
+        this.indexingExecutor = indexingExecutor;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(2))
                 .build();
+    }
+
+    @org.springframework.context.annotation.Bean(destroyMethod = "shutdown")
+    public static ExecutorService indexingExecutor(org.springframework.core.env.Environment environment) {
+        int configuredThreads = environment.getProperty(
+                "rag.indexing.executor-threads",
+                Integer.class,
+                DEFAULT_INDEXING_EXECUTOR_THREADS
+        );
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int upperBound = Math.min(MAX_INDEXING_EXECUTOR_THREADS, Math.max(MIN_INDEXING_EXECUTOR_THREADS, availableProcessors));
+        int poolSize = Math.max(MIN_INDEXING_EXECUTOR_THREADS, Math.min(configuredThreads, upperBound));
+
+        return java.util.concurrent.Executors.newFixedThreadPool(poolSize);
     }
 
     @PostMapping("/embed")
@@ -111,14 +129,12 @@ public class RagController {
     public IndexResponse indexDirectory(@Valid @RequestBody IndexDirectoryRequest request) throws Exception {
         List<Path> files = fileScanner.scan(Path.of(request.path()));
         String collection = resolveCollection(request.collection());
-        int workers = resolveIndexingWorkers(request.parallelism(), files.size());
 
         log.info(
-                "Found {} files to index in directory: {}. Collection: {}. Workers: {}",
+                "Found {} files to index in directory: {}. Collection: {}",
                 files.size(),
                 request.path(),
-                collection,
-                workers
+                collection
         );
 
         if (files.isEmpty()) {
@@ -129,43 +145,41 @@ public class RagController {
         int indexedFiles = 0;
         int skippedFiles = 0;
 
-        try (ExecutorService executor = Executors.newFixedThreadPool(workers)) {
-            CompletionService<FileIndexResult> completionService = new ExecutorCompletionService<>(executor);
+        CompletionService<FileIndexResult> completionService = new ExecutorCompletionService<>(indexingExecutor);
 
-            for (int i = 0; i < files.size(); i++) {
-                Path path = files.get(i);
-                int fileNumber = i + 1;
-                int totalFiles = files.size();
+        for (int i = 0; i < files.size(); i++) {
+            Path path = files.get(i);
+            int fileNumber = i + 1;
+            int totalFiles = files.size();
 
-                completionService.submit(() -> indexSingleFile(path, fileNumber, totalFiles, collection));
-            }
+            completionService.submit(() -> indexSingleFile(path, fileNumber, totalFiles, collection));
+        }
 
-            for (int i = 0; i < files.size(); i++) {
-                Future<FileIndexResult> future = completionService.take();
-                FileIndexResult result = future.get();
+        for (int i = 0; i < files.size(); i++) {
+            Future<FileIndexResult> future = completionService.take();
+            FileIndexResult result = future.get();
 
-                if (result.success()) {
-                    totalChunks += result.chunks();
-                    indexedFiles++;
+            if (result.success()) {
+                totalChunks += result.chunks();
+                indexedFiles++;
 
-                    log.info(
-                            "Indexed file {}/{}: {} -> {} chunks",
-                            result.fileNumber(),
-                            result.totalFiles(),
-                            result.path(),
-                            result.chunks()
-                    );
-                } else {
-                    skippedFiles++;
+                log.info(
+                        "Indexed file {}/{}: {} -> {} chunks",
+                        result.fileNumber(),
+                        result.totalFiles(),
+                        result.path(),
+                        result.chunks()
+                );
+            } else {
+                skippedFiles++;
 
-                    log.warn(
-                            "Skipping file {}/{}: {} because: {}",
-                            result.fileNumber(),
-                            result.totalFiles(),
-                            result.path(),
-                            result.errorMessage()
-                    );
-                }
+                log.warn(
+                        "Skipping file {}/{}: {} because: {}",
+                        result.fileNumber(),
+                        result.totalFiles(),
+                        result.path(),
+                        result.errorMessage()
+                );
             }
         }
 
@@ -189,7 +203,7 @@ public class RagController {
 
         List<Float> queryEmbedding = embeddingProvider.embedQuery(request.query());
 
-        if (Boolean.TRUE.equals(request.rerank()) && rerankingProperties.isEnabled()) {
+        if (rerankingProperties.isEnabled() && !Boolean.FALSE.equals(request.rerank())) {
             int candidateLimit = request.candidateLimit() == null
                     ? rerankingProperties.getCandidateLimit()
                     : request.candidateLimit();
@@ -236,7 +250,7 @@ public class RagController {
 
     private FileIndexResult indexSingleFile(Path path, int fileNumber, int totalFiles, String collection) {
         try {
-            log.info("Indexing file {}/{}: {}", fileNumber, totalFiles, path);
+            log.debug("Indexing file {}/{}: {}", fileNumber, totalFiles, path);
 
             String content = fileScanner.readContent(path);
 
@@ -257,17 +271,6 @@ public class RagController {
         }
     }
 
-    private int resolveIndexingWorkers(Integer requestedParallelism, int filesCount) {
-        if (filesCount <= 0) {
-            return 1;
-        }
-
-        int requestedWorkers = requestedParallelism == null || requestedParallelism <= 0
-                ? DEFAULT_INDEXING_WORKERS
-                : requestedParallelism;
-
-        return Math.max(1, Math.min(requestedWorkers, filesCount));
-    }
 
     private int resolveSearchLimit(Integer requestedLimit) {
         if (requestedLimit == null || requestedLimit <= 0) {
@@ -383,11 +386,7 @@ public class RagController {
             @NotBlank(message = "Path is required")
             String path,
 
-            String collection,
-
-            @Min(1)
-            @Max(32)
-            Integer parallelism
+            String collection
     ) {}
 
     public record HealthResponse(
