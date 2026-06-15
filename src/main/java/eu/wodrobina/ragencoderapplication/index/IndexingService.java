@@ -46,7 +46,7 @@ public class IndexingService {
 
         for (int i = 0; i < chunks.size(); i++) {
             Chunk chunk = chunks.get(i);
-            String fileName = resolveFileName(chunk.fileName(), chunk.sourceId());
+            String fileName = resolveFileName(chunk.fileName(), chunk.sourceId(), chunk.metadata());
             String fileType = resolveFileType(chunk.fileType(), fileName);
             Map<String, Object> documentMetadata = enrichedDocumentMetadata(
                     chunk.metadata(),
@@ -98,22 +98,36 @@ public class IndexingService {
         return Map.copyOf(copy);
     }
 
-    private String resolveFileName(String fileName, String sourceId) {
+    private String resolveFileName(String fileName, String sourceId, Map<String, Object> metadata) {
         if (fileName != null && !fileName.isBlank() && !"unknown".equalsIgnoreCase(fileName)) {
             return fileName;
         }
 
-        if (sourceId == null || sourceId.isBlank()) {
-            return "unknown";
+        // Try to find file_path in metadata
+        if (metadata != null && metadata.containsKey("file_path")) {
+            Object pathObj = metadata.get("file_path");
+            if (pathObj instanceof String) {
+                String pathStr = (String) pathObj;
+                try {
+                    Path p = Path.of(pathStr);
+                    Path fileNamePart = p.getFileName();
+                    if (fileNamePart != null) return fileNamePart.toString();
+                } catch (Exception ignored) {}
+            }
         }
 
-        try {
-            Path path = Path.of(sourceId);
-            Path resolvedFileName = path.getFileName();
-            return resolvedFileName == null ? "unknown" : resolvedFileName.toString();
-        } catch (Exception e) {
-            return "unknown";
+        // Fallback to sourceId
+        if (sourceId != null && !sourceId.isBlank()) {
+            try {
+                Path p = Path.of(sourceId);
+                Path resolvedFileName = p.getFileName();
+                return resolvedFileName == null ? "unknown" : resolvedFileName.toString();
+            } catch (Exception e) {
+                return "unknown";
+            }
         }
+
+        return "unknown";
     }
 
     private String resolveFileType(String fileType, String fileName) {
