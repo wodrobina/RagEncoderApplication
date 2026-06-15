@@ -1,28 +1,28 @@
 package eu.wodrobina.ragencoderapplication.index;
 
+import eu.wodrobina.ragencoderapplication.chunking.AbstractChunker;
 import eu.wodrobina.ragencoderapplication.chunking.Chunk;
-import eu.wodrobina.ragencoderapplication.chunking.Chunker;
 import eu.wodrobina.ragencoderapplication.encoder.EmbeddingProvider;
 import eu.wodrobina.ragencoderapplication.reranking.Reranker;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.time.Instant;
-import java.nio.file.Path;
-import java.util.HashMap;
 
 @Service
 public class IndexingService {
 
-    private final Chunker chunker;
+    private final AbstractChunker chunker;
     private final EmbeddingProvider embeddingProvider;
     private final VectorStore vectorStore;
     private final Reranker reranker;
 
     public IndexingService(
-            Chunker chunker,
+            AbstractChunker chunker,
             EmbeddingProvider embeddingProvider,
             VectorStore vectorStore,
             Reranker reranker
@@ -36,22 +36,41 @@ public class IndexingService {
     public int indexText(String sourceId, String text, Map<String, Object> metadata, String collection) {
         List<Chunk> chunks = chunker.chunk(sourceId, text, enrichedMetadata(metadata));
 
-        List<String> contents = chunks.stream()
-                .map(Chunk::content)
+        if (chunks.isEmpty()) {
+            return 0;
+        }
+
+        List<String> contentsForEmbedding = chunks.stream()
+                .map(this::buildEmbeddingText)
                 .toList();
 
-        List<List<Float>> embeddings = embeddingProvider.embedDocuments(contents);
+        List<List<Float>> embeddings = embeddingProvider.embedDocuments(contentsForEmbedding);
 
         if (embeddings.size() != chunks.size()) {
-            throw new IllegalStateException("Embedding count does not match chunk count: expected " + chunks.size() + ", got " + embeddings.size());
+            throw new IllegalStateException(
+                    "Embedding count does not match chunk count: expected "
+                            + chunks.size()
+                            + ", got "
+                            + embeddings.size()
+            );
         }
 
         List<VectorDocument> documents = new ArrayList<>();
 
         for (int i = 0; i < chunks.size(); i++) {
             Chunk chunk = chunks.get(i);
-            String fileName = resolveFileName(chunk.fileName(), chunk.sourceId(), chunk.metadata());
-            String fileType = resolveFileType(chunk.fileType(), fileName);
+
+            String fileName = resolveFileName(
+                    chunk.fileName(),
+                    chunk.sourceId(),
+                    chunk.metadata()
+            );
+
+            String fileType = resolveFileType(
+                    chunk.fileType(),
+                    fileName
+            );
+
             Map<String, Object> documentMetadata = enrichedDocumentMetadata(
                     chunk.metadata(),
                     chunk.sourceId(),
@@ -82,10 +101,8 @@ public class IndexingService {
     public List<SearchResult> search(String query, int limit, Map<String, Object> filter, String collection) {
         List<Float> queryEmbedding = embeddingProvider.embedQuery(query);
 
-        // Default limits if not provided
-        int internalLimit = (limit <= 0) ? 10 : limit;
-        
-        // The actual search returns results from the vector store
+        int internalLimit = limit <= 0 ? 10 : limit;
+
         List<SearchResult> candidates = vectorStore.search(
                 queryEmbedding,
                 internalLimit,
@@ -100,13 +117,44 @@ public class IndexingService {
         return reranker.rerank(query, candidates, limit);
     }
 
-    private Map<String, Object> enrichedMetadata(Map<String, Object> metadata) {
-        var copy = metadata == null ? new HashMap<String, Object>() : new HashMap<>(metadata);
-        copy.put("embedding_model", embeddingProvider.modelName());
-        copy.put("embedding_dimension", embeddingProvider.dimension());
-        return Map.copyOf(copy);
+    private String buildEmbeddingText(Chunk chunk) {
+        String fileName = resolveFileName(
+                chunk.fileName(),
+                chunk.sourceId(),
+                chunk.metadata()
+        );
+
+        String fileType = resolveFileType(
+                chunk.fileType(),
+                fileName
+        );
+
+        return """
+                file: %s
+                type: %s
+                source: %s
+                chunk: %d
+
+                %s
+                """.formatted(
+                fileName,
+                fileType,
+                chunk.sourceId(),
+                chunk.chunkIndex(),
+                chunk.content()
+        );
     }
 
+    private Map<String, Object> enrichedMetadata(Map<String, Object> metadata) {
+        var copy = metadata == null
+                ? new HashMap<String, Object>()
+                : new HashMap<>(metadata);
+
+        copy.put("embedding_model", embeddingProvider.modelName());
+        copy.put("embedding_dimension", embeddingProvider.dimension());
+
+        return Map.copyOf(copy);
+    }
 
     private Map<String, Object> enrichedDocumentMetadata(
             Map<String, Object> metadata,
@@ -115,11 +163,17 @@ public class IndexingService {
             String fileName,
             String fileType
     ) {
-        var copy = metadata == null ? new HashMap<String, Object>() : new HashMap<>(metadata);
+        var copy = metadata == null
+                ? new HashMap<String, Object>()
+                : new HashMap<>(metadata);
+
         copy.put("sourceId", sourceId);
         copy.put("chunkIndex", chunkIndex);
         copy.put("fileName", fileName);
         copy.put("fileType", fileType);
+        copy.put("embedding_model", embeddingProvider.modelName());
+        copy.put("embedding_dimension", embeddingProvider.dimension());
+
         return Map.copyOf(copy);
     }
 
@@ -128,27 +182,58 @@ public class IndexingService {
             return fileName;
         }
 
-        // Try to find file_path in metadata
         if (metadata != null && metadata.containsKey("file_path")) {
             Object pathObj = metadata.get("file_path");
-            if (pathObj instanceof String) {
-                String pathStr = (String) pathObj;
+
+            if (pathObj instanceof String pathStr && !pathStr.isBlank()) {
                 try {
-                    Path p = Path.of(pathStr);
-                    Path fileNamePart = p.getFileName();
-                    if (fileNamePart != null) return fileNamePart.toString();
-                } catch (Exception ignored) {}
+                    Path path = Path.of(pathStr);
+                    Path resolvedFileName = path.getFileName();
+
+                    if (resolvedFileName != null) {
+                        return resolvedFileName.toString();
+                    }
+                } catch (Exception ignored) {
+                    // fallback below
+                }
             }
         }
 
-        // Fallback to sourceId
+        if (metadata != null && metadata.containsKey("fileName")) {
+            Object fileNameObj = metadata.get("fileName");
+
+            if (fileNameObj instanceof String metadataFileName && !metadataFileName.isBlank()) {
+                return metadataFileName;
+            }
+        }
+
+        if (metadata != null && metadata.containsKey("path")) {
+            Object pathObj = metadata.get("path");
+
+            if (pathObj instanceof String pathStr && !pathStr.isBlank()) {
+                try {
+                    Path path = Path.of(pathStr);
+                    Path resolvedFileName = path.getFileName();
+
+                    if (resolvedFileName != null) {
+                        return resolvedFileName.toString();
+                    }
+                } catch (Exception ignored) {
+                    // fallback below
+                }
+            }
+        }
+
         if (sourceId != null && !sourceId.isBlank()) {
             try {
-                Path p = Path.of(sourceId);
-                Path resolvedFileName = p.getFileName();
-                return resolvedFileName == null ? "unknown" : resolvedFileName.toString();
-            } catch (Exception e) {
-                return "unknown";
+                Path path = Path.of(sourceId);
+                Path resolvedFileName = path.getFileName();
+
+                if (resolvedFileName != null) {
+                    return resolvedFileName.toString();
+                }
+            } catch (Exception ignored) {
+                return sourceId;
             }
         }
 
@@ -165,6 +250,7 @@ public class IndexingService {
         }
 
         int dotIndex = fileName.lastIndexOf('.');
+
         if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
             return "unknown";
         }
